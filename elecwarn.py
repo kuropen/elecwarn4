@@ -23,6 +23,7 @@ import io
 import datetime
 import os
 import json
+import traceback
 from os.path import join, dirname
 from dotenv import load_dotenv
 
@@ -237,8 +238,8 @@ def process_csv_content(company, company_tag, url, five_min_start=42, hourly_sta
         status_api_url = os.environ.get("STATUS_API")
         requests.post(status_api_url, data=request_payload)
         return msg
-    except Exception as e:
-        return str(e)
+    except:
+        return traceback.format_exc()
 
 
 def _main():
@@ -266,7 +267,7 @@ def _main():
     result['hokkaido'] = \
         process_csv_content('北海道電力',
                             'elecwarn_hokkaido',
-                            'http://denkiyoho.hepco.co.jp/data/juyo_juyo_01_{0:04d}{1:02d}{2:02d}.csv'
+                            'http://denkiyoho.hepco.co.jp/area/data/juyo_01_{0:04d}{1:02d}{2:02d}.csv'
                             .format(
                                 now.year,
                                 now.month,

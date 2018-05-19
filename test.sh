@@ -18,12 +18,21 @@
 
 cd $(dirname $0)
 
+JQ=$(which jq)
+if [ "$JQ" = "" ]; then
+  echo "jq is required for testing."
+  exit 100
+fi
+
 PYTHON=$(which python3 || which python)
 TESTFILE=$(mktemp)
 
 # Check the output by the application.
-$PYTHON elecwarn.py | tee $TESTFILE
-grep Error $TESTFILE > /dev/null
+$PYTHON elecwarn.py | $JQ . | tee $TESTFILE
+
+# When Travis CI fetches data of Tohoku area, error occurs.
+# Because of this, Tohoku area is excluded from error check for while.
+cat $TESTFILE | grep -v tohoku | grep Error > /dev/null
 
 # If there is no error, result code for grep is not 0.
 # This should be treated as success.

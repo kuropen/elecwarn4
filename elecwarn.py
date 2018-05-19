@@ -1,8 +1,29 @@
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+
+# Electricity Warning Crawler, Mastodon / Python Edition.
+# Copyright (C) 2018 Hirochika Yuda, a.k.a. Kuropen.
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Affero General Public License as published
+# by the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU Affero General Public License for more details.
+#
+# You should have received a copy of the GNU Affero General Public License
+# along with this program.  If not, see <http://www.gnu.org/licenses/>.
+
 import requests
 import pandas as pd
 import io
 import datetime
 import os
+import json
+import traceback
 from os.path import join, dirname
 from dotenv import load_dotenv
 
@@ -69,7 +90,7 @@ class CsvData:
         self.five_min_start = five_min_start
         self.hourly_start = hourly_start
 
-    def print(self):
+    def dump(self):
         """
         Print the data in the CSV
         :return: void
@@ -180,7 +201,7 @@ def process_csv_content(company, company_tag, url, five_min_start=42, hourly_sta
     """
     try:
         data = CsvData(url, five_min_start, hourly_start)
-        # data.print()
+        # data.dump()
 
         # Five minutes list
         latest_demand = data.get_last_five_min_demand()
@@ -206,6 +227,9 @@ def process_csv_content(company, company_tag, url, five_min_start=42, hourly_sta
                     percentage)
         token = os.environ.get("TOKEN_{0}".format(company_tag.upper()))
 
+        if not token:
+            return msg
+
         request_payload = {
             'access_token': token,
             'status': msg,
@@ -214,8 +238,8 @@ def process_csv_content(company, company_tag, url, five_min_start=42, hourly_sta
         status_api_url = os.environ.get("STATUS_API")
         requests.post(status_api_url, data=request_payload)
         return msg
-    except Exception as e:
-        return str(e)
+    except:
+        return traceback.format_exc()
 
 
 def _main():
@@ -243,7 +267,12 @@ def _main():
     result['hokkaido'] = \
         process_csv_content('北海道電力',
                             'elecwarn_hokkaido',
-                            'http://denkiyoho.hepco.co.jp/data/juyo_hokkaidou.csv')
+                            'http://denkiyoho.hepco.co.jp/area/data/juyo_01_{0:04d}{1:02d}{2:02d}.csv'
+                            .format(
+                                now.year,
+                                now.month,
+                                now.day
+                            ))
 
     # Chubu
     result['chubu'] = \
@@ -305,4 +334,4 @@ if __name__ == '__main__':
     # this is for debug
     dotenv_path = join(dirname(__file__), '.env')
     load_dotenv(dotenv_path)
-    print(_main())
+    print(json.dumps(_main(), ensure_ascii=False))

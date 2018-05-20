@@ -9,7 +9,7 @@ RUN apt-get update && \
     apt-get -y upgrade && \
     apt-get -y install build-essential \
     gfortran \
-    libatlas-dev \
+    libatlas-base-dev \
     liblapack-dev \
     busybox-static
 
@@ -25,4 +25,3 @@ RUN mkdir -p /var/spool/cron/crontabs && \
 
 ENTRYPOINT ["/usr/local/sbin/tini", "--"]
 CMD ["busybox", "crond", "-f", "-L", "/dev/stderr"]
-

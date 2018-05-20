@@ -33,7 +33,7 @@ $PYTHON elecwarn.py | $JQ . | tee $TESTFILE
 
 # When Travis CI fetches data of Tohoku area, error occurs.
 # Because of this, Tohoku area is excluded from error check for while.
-cat $TESTFILE | grep -v tohoku | grep Error > /dev/null
+cat $TESTFILE | grep Error > /dev/null
 
 # If there is no error, result code for grep is not 0.
 # This should be treated as success.

@@ -13,6 +13,8 @@ RUN apt-get update && \
     liblapack-dev \
     busybox-static
 
+RUN echo "${TZ}" > /etc/timezone && dpkg-reconfigure -f noninteractive tzdata
+
 RUN mkdir /elecwarn
 ADD . /elecwarn
 

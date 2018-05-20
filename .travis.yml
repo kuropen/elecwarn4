@@ -9,3 +9,4 @@ before_install:
 script:
   - bash tests/fetch_test.sh
   - docker build --tag=kuropen/elecwarn-don:testing .
+  - bash tests/docker_tz_test.sh

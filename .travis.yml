@@ -8,4 +8,5 @@ before_install:
   - sudo apt-get install -y build-essential gfortran libatlas-base-dev liblapack-dev jq
 script:
   - bash tests/fetch_test.sh
-  - docker build --tag=kuropen/elecwarn-don .
+  - docker build --tag=kuropen/elecwarn-don:testing .
+  - bash tests/docker_tz_test.sh

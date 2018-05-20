@@ -21,7 +21,7 @@ cd ..
 
 TESTFILE=$(mktemp)
 
-docker run --rm kuropen/elecwarn-don:testing LANG=C date | tee $TESTFILE
+docker run --rm kuropen/elecwarn-don:testing date | tee $TESTFILE
 grep JST $TESTFILE > /dev/null
 
 # Fails if JST is not included (timezone is wrong)

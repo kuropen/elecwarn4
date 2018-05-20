@@ -17,6 +17,7 @@
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 cd $(dirname $0)
+cd ..
 
 JQ=$(which jq)
 if [ "$JQ" = "" ]; then

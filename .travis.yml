@@ -1,4 +1,6 @@
 language: python
+services:
+  - docker
 python:
   - "3.6"
 before_install:
@@ -6,3 +8,4 @@ before_install:
   - sudo apt-get install -y build-essential gfortran libatlas-base-dev liblapack-dev jq
 script:
   - bash test.sh
+  - docker build --tag=kuropen/elecwarn-don .

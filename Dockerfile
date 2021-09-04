@@ -1,4 +1,4 @@
-FROM python:3.6-stretch
+FROM python:3.9-bullseye
 
 ENV TZ Asia/Tokyo
 ENV TINI_VERSION v0.17.0

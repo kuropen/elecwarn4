@@ -24,7 +24,7 @@ import datetime
 import os
 import json
 import traceback
-import numpy as np
+import pytz
 from os.path import join, dirname
 from dotenv import load_dotenv
 from gql import gql, Client
@@ -100,7 +100,10 @@ class CsvData:
         self.lines = s.decode('shift-jis').splitlines()
         self.five_min_start = five_min_start
         self.hourly_start = hourly_start
-        self.today = datetime.date.today()
+
+        tokyo = pytz.timezone('Asia/Tokyo')
+
+        self.today = tokyo.localize(datetime.datetime.now()).date()
         self.include_wind = include_wind
 
     def dump(self):
@@ -297,11 +300,6 @@ def process_csv_content(id, url, five_min_start=55, hourly_start=14, include_win
 
 
 def _main():
-    now = datetime.datetime.now()
-    if now.hour == 0:
-        print("It's before 1 o'clock: no fetch performed.")
-        return {}
-
     api_url = os.environ.get("GRAPHQL_SERVER")
     server_key = os.environ.get("SERVER_KEY")
     transport = AIOHTTPTransport(url=api_url, headers={'Authorization': server_key})

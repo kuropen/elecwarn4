@@ -1,4 +1,4 @@
-FROM python:3.8-bullseye AS pip
+FROM python:3.9-bullseye AS pip
 
 RUN apt-get update && \
     apt-get -y install build-essential \
@@ -10,7 +10,7 @@ COPY . /src
 WORKDIR /src
 RUN pip install -r requirements.txt -t .
 
-FROM public.ecr.aws/lambda/python:3.8
+FROM public.ecr.aws/lambda/python:3.9
 COPY --from=pip /src .
 CMD ["app.handler"]
 

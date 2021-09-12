@@ -16,7 +16,7 @@
 #
 # You should have received a copy of the GNU Affero General Public License
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
-
+import boto3
 import requests
 import pandas as pd
 import io
@@ -24,12 +24,12 @@ import datetime
 import os
 import json
 import traceback
-import numpy as np
+from zoneinfo import ZoneInfo
 from os.path import join, dirname
 from dotenv import load_dotenv
-from gql import gql, Client
-from gql.transport.aiohttp import AIOHTTPTransport
 from enum import Enum
+
+dynamodb = boto3.resource('dynamodb')
 
 class DemandData:
     """
@@ -100,7 +100,7 @@ class CsvData:
         self.lines = s.decode('shift-jis').splitlines()
         self.five_min_start = five_min_start
         self.hourly_start = hourly_start
-        self.today = datetime.date.today()
+        self.today = datetime.datetime.now(tz=ZoneInfo('Asia/Tokyo')).isoformat().split('T')[0]
         self.include_wind = include_wind
 
     def dump(self):
@@ -141,9 +141,11 @@ class CsvData:
         expected_hour = peak_demand_list[1]
         percentage = peak_supply_list[5]
         reserve_pct = peak_supply_list[4]
-        return {
-            "areaId": self.area_id,
-            "date": self.today.isoformat(),
+
+        item = {
+            "area": self.area_id,
+            "date_type": (self.today + "_" + peak_type.value),
+            "date": self.today,
             "expectedHour": expected_hour,
             "type": peak_type.value,
             "percentage": int(percentage),
@@ -152,6 +154,11 @@ class CsvData:
             "amount": int(peak_demand),
             "supply": int(peak_supply),
         }
+
+        table = dynamodb.Table("JED_PeakElectricity")
+        table.put_item(Item=item)
+
+        return item
 
     def get_peak_supply_as_float(self):
         """
@@ -194,15 +201,66 @@ class CsvData:
         five_min_latest = five_min_reverse.iloc[0].fillna(0)
         wind = 0
         if self.include_wind:
-            wind = five_min_latest.WIND
-        return {
-            "areaId": self.area_id,
-            "date": self.today.isoformat(),
-            "time": five_min_latest.TIME,
+            wind = int(five_min_latest.WIND)
+
+        latest_time = five_min_latest.TIME
+        [latest_hour, latest_minute] = latest_time.split(':')
+
+        now = datetime.datetime.now(tz=ZoneInfo('Asia/Tokyo'))
+        abs_date = datetime.datetime(
+            now.year, now.month, now.day, int(latest_hour), int(latest_minute), 0, tzinfo=ZoneInfo('Asia/Tokyo')
+        ).isoformat()
+
+        solar = int(five_min_latest.SOLAR)
+
+        item = {
+            "area": self.area_id,
+            "absDate": abs_date,
+            "date": self.today,
+            "time": latest_time,
             "amount": int(five_min_latest.DEMAND),
-            "solar": int(five_min_latest.SOLAR),
+            "solar": solar,
             "wind": wind,
+            "createdAt": now.isoformat(),
         }
+
+        table = dynamodb.Table("JED_FiveMinDemand")
+        table.put_item(Item=item)
+
+        if solar == 0:
+            five_min_solar_reverse = five_min_csv.query('SOLAR > 0').iloc[::-1]
+            five_min_solar_latest = five_min_solar_reverse.iloc[0].fillna(0)
+            solar_latest_time = five_min_solar_latest.TIME
+            if latest_time == solar_latest_time:
+                return item
+
+            solar_wind = 0
+            if self.include_wind:
+                solar_wind = int(five_min_solar_latest.WIND)
+
+            [solar_latest_hour, solar_latest_minute] = solar_latest_time.split(':')
+            solar_abs_date = datetime.datetime(
+                now.year, now.month, now.day, int(solar_latest_hour), int(solar_latest_minute),
+                0, tzinfo=ZoneInfo('Asia/Tokyo')
+            ).isoformat()
+
+            latest_solar = int(five_min_solar_latest.SOLAR)
+
+            solar_item = {
+                "area": self.area_id,
+                "absDate": solar_abs_date,
+                "date": self.today,
+                "time": solar_latest_time,
+                "amount": int(five_min_solar_latest.DEMAND),
+                "solar": latest_solar,
+                "wind": solar_wind,
+                "createdAt": now.isoformat(),
+            }
+            table.put_item(Item=solar_item)
+
+            return solar_item
+
+        return item
 
     def get_hour_list(self):
         """
@@ -223,14 +281,27 @@ class CsvData:
         hour_csv = self.get_hour_list()
         hour_reverse = hour_csv.query('DEMAND > 0').iloc[::-1]
         hour_latest = hour_reverse.iloc[0].fillna(0)
-        return {
-            "areaId": self.area_id,
-            "date": self.today.isoformat(),
-            "hour": int(hour_latest.TIME.split(":")[0]),
+        hour_latest_val = int(hour_latest.TIME.split(":")[0])
+        now = datetime.datetime.now(tz=ZoneInfo('Asia/Tokyo'))
+        abs_date = datetime.datetime(
+            now.year, now.month, now.day, hour_latest_val, 0, 0, tzinfo=ZoneInfo('Asia/Tokyo')
+        ).isoformat()
+
+        item = {
+            "area": self.area_id,
+            "absDate": abs_date,
+            "date": self.today,
+            "hour": hour_latest_val,
             "amount": int(hour_latest.DEMAND),
             "supply": int(hour_latest.SUPPLY),
             "percentage": int(hour_latest.PERCENTAGE),
+            "createdAt": now.isoformat(),
         }
+
+        table = dynamodb.Table("JED_HourlyDemand")
+        table.put_item(Item=item)
+
+        return item
 
     def get_last_hour_demand(self):
         """
@@ -273,18 +344,18 @@ def back_to_lines_str(split_list):
     return '\n'.join(split_list)
 
 
-def process_csv_content(id, url, five_min_start=55, hourly_start=14, include_wind=False):
+def process_csv_content(id, csv_url, five_min_start=55, hourly_start=14, include_wind=False):
     """
     Parse CSV file and build data
     :param id: Area ID
-    :param url: target CSV URL
+    :param csv_url: target CSV URL
     :param five_min_start: The row where the data per 5 minutes start
     :param hourly_start: The row where the data per 1 hour start
     :param include_wind: Whether the electric power company provides wind generation in 5 minutes data
     :return: string
     """
     try:
-        data = CsvData(id, url, five_min_start, hourly_start, include_wind)
+        data = CsvData(id, csv_url, five_min_start, hourly_start, include_wind)
         mutation_argument = {
             "peak": data.get_peak_demand_gql(peak_type=PeakType.AMOUNT),
             "peakPct": data.get_peak_demand_gql(peak_type=PeakType.PERCENTAGE),
@@ -297,79 +368,48 @@ def process_csv_content(id, url, five_min_start=55, hourly_start=14, include_win
 
 
 def _main():
-    now = datetime.datetime.now()
+    now = datetime.datetime.now(tz=ZoneInfo('Asia/Tokyo'))
     if now.hour == 0:
         print("It's before 1 o'clock: no fetch performed.")
         return {}
 
-    api_url = os.environ.get("GRAPHQL_SERVER")
-    server_key = os.environ.get("SERVER_KEY")
-    transport = AIOHTTPTransport(url=api_url, headers={'Authorization': server_key})
-    client = Client(transport=transport, fetch_schema_from_transport=True)
+    environment = os.getenv("AC_ENV", "Testing")
 
-    query = gql(
-        """
-query AreaQuery {
-  authorized
-  allArea {
-    id
-    csvFile
-    csvHourlyPos
-    csvFiveMinPos
-    hasWindData
-  }
-}
-        """
+    config_client = boto3.client("appconfig")
+    response = config_client.get_configuration(
+        Application='JED',
+        Environment=environment,
+        Configuration='AreaInfo',
+        ClientId='crawler',
     )
 
-    mutation_query = gql("""
-mutation CrawlerMutation(
-  $peak:PeakElectricityInput,
-  $peakPct:PeakElectricityInput,
-  $hourly: HourlyDemandInput,
-  $five: FiveMinDemandInput
-) {
-  postPeak: postPeakElectricity(peakInput: $peak) {
-    id
-    createdAt
-    updatedAt
-  }
-  postPeakPct: postPeakElectricity(peakInput: $peakPct) {
-    id
-    createdAt
-    updatedAt
-  }
-  postHourlyDemand(hourlyInput: $hourly) {
-    id
-    createdAt
-    updatedAt
-  }
-  postFiveMinDemand(fiveInput: $five) {
-    id
-    createdAt
-    updatedAt
-  }
-}    
-    """)
+    area_config = json.loads(response["Content"].read().decode('utf-8'))
 
-    fetch_result = client.execute(query)
+    for area in area_config:
+        csv_file = area.get("csvFile").replace("YYYYMMDD", now.strftime("%Y%m%d"))
+        print(process_csv_content(
+            area.get("code"),
+            csv_url=csv_file,
+            hourly_start=area.get("csvHourlyPos"),
+            five_min_start=area.get("csvFiveMinPos"),
+            include_wind=area.get("hasWindData"),
+        ))
 
-    if fetch_result.get("authorized"):
-        for area in fetch_result.get("allArea"):
-            mutation_data = process_csv_content(
-                area.get("id"),
-                area.get("csvFile"),
-                hourly_start=area.get("csvHourlyPos"),
-                five_min_start=area.get("csvFiveMinPos"),
-                include_wind=area.get("hasWindData"),
-            )
-            print(mutation_data)
-            result = client.execute(mutation_query, variable_values=mutation_data)
-            print(result)
-    else:
-        print("Not authorized! Did you set server key properly?")
+    return area_config
 
-    return fetch_result
+    # for area in fetch_result.get("allArea"):
+    #     mutation_data = process_csv_content(
+    #         area.get("id"),
+    #         area.get("csvFile"),
+    #         hourly_start=area.get("csvHourlyPos"),
+    #         five_min_start=area.get("csvFiveMinPos"),
+    #         include_wind=area.get("hasWindData"),
+    #     )
+    #     print(mutation_data)
+    #     result = client.execute(mutation_query, variable_values=mutation_data)
+    #     print(result)
+    #
+    # return fetch_result
 
 
 if __name__ == '__main__':

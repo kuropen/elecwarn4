@@ -24,4 +24,4 @@ typing-extensions==3.10.0.2
 tzdata==2021.1
 urllib3==1.26.8
 websockets==9.1
-yarl==1.6.3
+yarl==1.7.2

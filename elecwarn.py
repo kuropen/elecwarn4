@@ -174,7 +174,7 @@ class CsvData:
         }
 
         table = dynamodb.Table("JED_PeakElectricity")
-        # table.put_item(Item=item)
+        table.put_item(Item=item)
 
         return item
 
@@ -243,7 +243,7 @@ class CsvData:
         }
 
         table = dynamodb.Table("JED_FiveMinDemand")
-        # table.put_item(Item=item)
+        table.put_item(Item=item)
 
         if solar == 0:
             five_min_solar_reverse = five_min_csv.query('SOLAR > 0').iloc[::-1]
@@ -320,7 +320,7 @@ class CsvData:
         }
 
         table = dynamodb.Table("JED_HourlyDemand")
-        # table.put_item(Item=item)
+        table.put_item(Item=item)
 
         return item
 

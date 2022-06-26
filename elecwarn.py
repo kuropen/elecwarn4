@@ -86,14 +86,25 @@ class CsvData:
     CSV Data bundle
     """
 
-    def __init__(self, area_id, url, five_min_start, hourly_start, include_wind=False):
+    def __init__(
+            self,
+            area_id,
+            url,
+            five_min_start,
+            hourly_start,
+            include_wind=False,
+            include_reserve_pct=False,
+            include_five_min_reserve=False
+    ):
         """
         Fetch CSV
-        :param url: Area ID
+        :param area_id: Area ID
         :param url: Target URL
         :param five_min_start: The row where the data per 5 minutes start
         :param hourly_start: The row where the data per 1 hour start
         :param include_wind: Whether the electric power company provides wind generation in 5 minutes data
+        :param include_reserve_pct: Whether the electric power company provides reserve percentage in peak data
+        :param include_five_min_reserve: Whether the electric power company provides supply in hourly data
         """
         s = requests.get(url).content
         self.area_id = area_id
@@ -102,6 +113,8 @@ class CsvData:
         self.hourly_start = hourly_start
         self.today = datetime.datetime.now(tz=ZoneInfo('Asia/Tokyo')).isoformat().split('T')[0]
         self.include_wind = include_wind
+        self.include_reserve_pct = include_reserve_pct
+        self.include_five_min_reserve = include_five_min_reserve
 
     def dump(self):
         """
@@ -139,8 +152,13 @@ class CsvData:
         peak_demand_list = self.lines[demand_line].split(',')
         peak_demand = peak_demand_list[0]
         expected_hour = peak_demand_list[1]
-        percentage = peak_supply_list[5]
-        reserve_pct = peak_supply_list[4]
+
+        if self.include_reserve_pct:
+            percentage = peak_supply_list[5]
+            reserve_pct = peak_supply_list[4]
+        else:
+            percentage = peak_supply_list[4]
+            reserve_pct = 0
 
         item = {
             "area": self.area_id,
@@ -156,7 +174,7 @@ class CsvData:
         }
 
         table = dynamodb.Table("JED_PeakElectricity")
-        table.put_item(Item=item)
+        # table.put_item(Item=item)
 
         return item
 
@@ -225,7 +243,7 @@ class CsvData:
         }
 
         table = dynamodb.Table("JED_FiveMinDemand")
-        table.put_item(Item=item)
+        # table.put_item(Item=item)
 
         if solar == 0:
             five_min_solar_reverse = five_min_csv.query('SOLAR > 0').iloc[::-1]
@@ -269,7 +287,10 @@ class CsvData:
         """
         hour_list = self.lines[self.hourly_start:self.hourly_start + 25]
         hour_csv = pd.read_csv(io.StringIO(back_to_lines_str(hour_list)))
-        asc_col = ['DATE', 'TIME', 'DEMAND', 'EXPECTED', 'PERCENTAGE', 'SUPPLY']
+        if self.include_five_min_reserve:
+            asc_col = ['DATE', 'TIME', 'DEMAND', 'EXPECTED', 'PERCENTAGE', 'RESERVE_PCT', 'SUPPLY']
+        else:
+            asc_col = ['DATE', 'TIME', 'DEMAND', 'EXPECTED', 'PERCENTAGE', 'SUPPLY']
         hour_csv.columns = asc_col
         return hour_csv
 
@@ -299,7 +320,7 @@ class CsvData:
         }
 
         table = dynamodb.Table("JED_HourlyDemand")
-        table.put_item(Item=item)
+        # table.put_item(Item=item)
 
         return item
 
@@ -344,18 +365,36 @@ def back_to_lines_str(split_list):
     return '\n'.join(split_list)
 
 
-def process_csv_content(id, csv_url, five_min_start=55, hourly_start=14, include_wind=False):
+def process_csv_content(
+        area_id,
+        csv_url,
+        five_min_start=55,
+        hourly_start=14,
+        include_wind=False,
+        include_reserve_pct=False,
+        include_five_min_reserve=False
+):
     """
     Parse CSV file and build data
-    :param id: Area ID
+    :param area_id: Area ID
     :param csv_url: target CSV URL
     :param five_min_start: The row where the data per 5 minutes start
     :param hourly_start: The row where the data per 1 hour start
     :param include_wind: Whether the electric power company provides wind generation in 5 minutes data
+    :param include_reserve_pct: Whether the electric power company provides reserve percentage in peak data
+    :param include_five_min_reserve: Whether the electric power company provides supply in hourly data
     :return: string
     """
     try:
-        data = CsvData(id, csv_url, five_min_start, hourly_start, include_wind)
+        data = CsvData(
+            area_id,
+            csv_url,
+            five_min_start,
+            hourly_start,
+            include_wind,
+            include_reserve_pct,
+            include_five_min_reserve
+        )
         mutation_argument = {
             "peak": data.get_peak_demand_gql(peak_type=PeakType.AMOUNT),
             "peakPct": data.get_peak_demand_gql(peak_type=PeakType.PERCENTAGE),
@@ -393,6 +432,8 @@ def _main():
             hourly_start=area.get("csvHourlyPos"),
             five_min_start=area.get("csvFiveMinPos"),
             include_wind=area.get("hasWindData"),
+            include_reserve_pct=area.get("hasPeakReserveData"),
+            include_five_min_reserve=area.get("hasFiveMinReserveData")
         ))
 
     return area_config
